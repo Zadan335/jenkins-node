@@ -8,7 +8,7 @@ pipeline {
     }
     stages {
         stage('Checkout') {
-            steps { git 'https://github.com/yourusername/myapp.git' }
+            steps { git 'https://github.com/Zadan335/jenkins-node.git' }
         }
         stage('Install Dependencies') {
             steps { sh 'npm install' }
