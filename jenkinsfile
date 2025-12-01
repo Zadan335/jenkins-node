@@ -2,57 +2,103 @@ pipeline {
     agent any
     environment {
         DOCKER_IMAGE = "zainali128/myapp"
+        DOCKERHUB_CREDENTIALS = "zainali128"  // Add DockerHub credentials in Jenkins
     }
     parameters {
         choice(name: 'ENV', choices: ['dev','qa','prod'], description: 'Select environment')
     }
+    options {
+        skipStagesAfterUnstable()
+        timestamps()
+    }
     stages {
         stage('Checkout') {
-            steps { git 'https://github.com/Zadan335/jenkins-node.git' }
-        }
-        stage('Install Dependencies') {
-            steps { sh 'npm install' }
-        }
-        stage('Run Unit Tests') {
-            steps { sh 'npm test' }
-        }
-        stage('Run Integration Tests') {
-            steps { sh 'node tests/integration.test.js' }
-        }
-        stage('Lint / Code Analysis') {
-            steps { sh 'echo "Linting placeholder"' }
-        }
-        stage('Docker Build & Push') {
             steps {
-                script {
-                    def version = "v1.${env.BUILD_NUMBER}"
-                    sh "docker build -t ${DOCKER_IMAGE}:${version} ."
-                    sh "docker push ${DOCKER_IMAGE}:${version}"
+                // Checkout using main branch
+                git branch: 'main', url: 'https://github.com/Zadan335/jenkins-node.git'
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Run Tests') {
+            parallel {
+                stage('Unit Tests') {
+                    steps { sh 'npm test' }
+                }
+                stage('Integration Tests') {
+                    steps { sh 'node tests/integration.test.js' }
                 }
             }
         }
+
+        stage('Lint / Code Analysis') {
+            steps {
+                sh 'npx eslint . || true' // replace with your linting tool
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    // Semantic versioning: v1.buildnumber
+                    def version = "v1.${env.BUILD_NUMBER}"
+                    
+                    // Build Docker image
+                    sh "docker build -t ${DOCKER_IMAGE}:${version} ."
+
+                    // Push Docker image with credentials
+                    withDockerRegistry([credentialsId: "${DOCKERHUB_CREDENTIALS}", url: ""]) {
+                        sh "docker push ${DOCKER_IMAGE}:${version}"
+                    }
+
+                    // Save version to env for deploy
+                    env.IMAGE_TAG = version
+                }
+            }
+        }
+
         stage('Deploy') {
             steps {
                 script {
-                    if(params.ENV=='dev') {
-                        sh "docker run -d --env-file config/dev.env --name myapp_dev ${DOCKER_IMAGE}:v1.${env.BUILD_NUMBER}"
-                    } else if(params.ENV=='qa') {
-                        input "Approve QA Deployment?"
-                        sh "docker run -d --env-file config/qa.env --name myapp_qa ${DOCKER_IMAGE}:v1.${env.BUILD_NUMBER}"
-                        sh "node tests/integration.test.js"
-                    } else if(params.ENV=='prod') {
-                        input "Approve Production Deployment?"
-                        sh "docker run -d --env-file config/prod.env --name myapp_prod ${DOCKER_IMAGE}:v1.${env.BUILD_NUMBER}"
+                    def envFile = "config/${params.ENV}.env"
+                    def containerName = "myapp_${params.ENV}"
+
+                    if(params.ENV == 'qa' || params.ENV == 'prod') {
+                        input "Approve Deployment to ${params.ENV.toUpperCase()}?"
+                    }
+
+                    // Stop previous container if exists
+                    sh "docker stop ${containerName} || true"
+                    sh "docker rm ${containerName} || true"
+
+                    // Run new container
+                    sh "docker run -d --env-file ${envFile} --name ${containerName} ${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+
+                    // Optional: run integration tests after deployment
+                    if(params.ENV != 'dev') {
+                        sh 'node tests/integration.test.js'
                     }
                 }
             }
         }
     }
+
     post {
+        success {
+            echo "Pipeline completed successfully for ${params.ENV}!"
+        }
         failure {
-            echo "Deployment failed! Rolling back..."
+            echo "Pipeline failed! Attempting rollback..."
             sh "docker stop myapp_${params.ENV} || true"
             sh "docker rm myapp_${params.ENV} || true"
+        }
+        always {
+            echo "Pipeline finished at ${new Date()}"
         }
     }
 }
