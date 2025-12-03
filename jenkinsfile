@@ -77,7 +77,8 @@ pipeline {
                     sh "docker rm ${containerName} || true"
 
                     // Run new container
-                    sh "docker run -d --env-file ${envFile} --name ${containerName} ${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+                    sh "docker run -d --env-file ${envFile} -p 3000:3000 --name ${containerName} ${DOCKER_IMAGE}:${env.IMAGE_TAG}"
+
 
                     // Optional: run integration tests after deployment
                     if(params.ENV != 'dev') {
