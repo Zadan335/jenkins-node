@@ -2,7 +2,7 @@ pipeline {
     agent any
     environment {
         DOCKER_IMAGE = "zainali128/myapp"
-        DOCKERHUB_CREDENTIALS = "zainali128"  // Add DockerHub credentials in Jenkins
+        DOCKERHUB_CREDENTIALS = "dockerhub-zainali"  // Add DockerHub credentials in Jenkins
     }
     parameters {
         choice(name: 'ENV', choices: ['dev','qa','prod'], description: 'Select environment')
